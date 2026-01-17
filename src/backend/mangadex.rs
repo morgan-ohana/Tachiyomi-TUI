@@ -163,6 +163,8 @@ fn parse_manga_list(response: MangaResponse) -> Vec<Manga> {
 fn build_client() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent("Tachiyomi-TUI/0.1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .expect("Failed to build HTTP client")
 }
