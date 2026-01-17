@@ -22,7 +22,9 @@ enum BackgroundTask {
     CoverLoaded { manga_id: String, image: DynamicImage },
     ChaptersLoaded { chapters: Vec<backend::mangadex::Chapter> },
     PageUrlsLoaded { urls: Vec<String> },
+    PageUrlsLoadFailed,
     PageImageLoaded { image: DynamicImage },
+    PageImageLoadFailed,
     SearchResults { results: Vec<Manga> },
 }
 
@@ -107,17 +109,30 @@ fn spawn_chapters_loader(manga_id: String, tx: mpsc::UnboundedSender<BackgroundT
 
 fn spawn_page_urls_loader(chapter_id: String, tx: mpsc::UnboundedSender<BackgroundTask>) {
     tokio::spawn(async move {
-        if let Some(urls) = get_chapter_pages(&chapter_id).await {
-            let _ = tx.send(BackgroundTask::PageUrlsLoaded { urls });
+        match get_chapter_pages(&chapter_id).await {
+            Some(urls) if !urls.is_empty() => {
+                let _ = tx.send(BackgroundTask::PageUrlsLoaded { urls });
+            }
+            _ => {
+                let _ = tx.send(BackgroundTask::PageUrlsLoadFailed);
+            }
         }
     });
 }
 
 fn spawn_page_image_loader(page_url: String, tx: mpsc::UnboundedSender<BackgroundTask>) {
     tokio::spawn(async move {
-        if let Some(image) = fetch_page_image(&page_url).await {
-            let _ = tx.send(BackgroundTask::PageImageLoaded { image });
+        const MAX_RETRIES: u32 = 3;
+        for attempt in 0..MAX_RETRIES {
+            if let Some(image) = fetch_page_image(&page_url).await {
+                let _ = tx.send(BackgroundTask::PageImageLoaded { image });
+                return;
+            }
+            if attempt < MAX_RETRIES - 1 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500 * (attempt as u64 + 1))).await;
+            }
         }
+        let _ = tx.send(BackgroundTask::PageImageLoadFailed);
     });
 }
 
@@ -199,13 +214,20 @@ async fn run_app(
                     }
                     BackgroundTask::PageUrlsLoaded { urls } => {
                         app.reader.page_urls = urls;
+                        app.reader.error = None;
                         // Load first page
                         if let Some(url) = app.reader.page_urls.first() {
                             spawn_page_image_loader(url.clone(), task_tx.clone());
                         }
                     }
+                    BackgroundTask::PageUrlsLoadFailed => {
+                        app.set_page_load_error("Failed to load chapter pages. Press 'r' to retry.".to_string());
+                    }
                     BackgroundTask::PageImageLoaded { image } => {
                         app.set_page_image(image);
+                    }
+                    BackgroundTask::PageImageLoadFailed => {
+                        app.set_page_load_error("Failed to load page image. Press 'r' to retry.".to_string());
                     }
                     BackgroundTask::SearchResults { results } => {
                         app.search_results = results;
@@ -514,6 +536,21 @@ fn handle_reader_input(
             if app.prev_chapter() {
                 if let Some(chapter) = app.reader.chapters.get(app.reader.current_chapter_idx) {
                     spawn_page_urls_loader(chapter.id.clone(), task_tx.clone());
+                }
+            }
+        }
+        KeyCode::Char('r') => {
+            if app.reader.error.is_some() {
+                app.reader.loading = true;
+                app.reader.error = None;
+                if app.reader.page_urls.is_empty() {
+                    // Retry loading chapter pages
+                    if let Some(chapter) = app.reader.chapters.get(app.reader.current_chapter_idx) {
+                        spawn_page_urls_loader(chapter.id.clone(), task_tx.clone());
+                    }
+                } else if let Some(url) = app.reader.page_urls.get(app.reader.current_page) {
+                    // Retry loading page image
+                    spawn_page_image_loader(url.clone(), task_tx.clone());
                 }
             }
         }

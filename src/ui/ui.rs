@@ -52,6 +52,7 @@ pub struct ReaderState {
     pub current_page: usize,
     pub page_image: Option<StatefulProtocol>,
     pub loading: bool,
+    pub error: Option<String>,
 }
 
 pub struct App {
@@ -178,6 +179,12 @@ impl App {
             self.reader.page_image = Some(picker.new_resize_protocol(image));
         }
         self.reader.loading = false;
+        self.reader.error = None;
+    }
+
+    pub fn set_page_load_error(&mut self, error: String) {
+        self.reader.loading = false;
+        self.reader.error = Some(error);
     }
 
     pub fn next_page(&mut self) -> bool {
@@ -185,6 +192,7 @@ impl App {
             self.reader.current_page += 1;
             self.reader.loading = true;
             self.reader.page_image = None;
+            self.reader.error = None;
             true
         } else {
             false
@@ -196,6 +204,7 @@ impl App {
             self.reader.current_page -= 1;
             self.reader.loading = true;
             self.reader.page_image = None;
+            self.reader.error = None;
             true
         } else {
             false
@@ -209,6 +218,7 @@ impl App {
             self.reader.page_urls.clear();
             self.reader.page_image = None;
             self.reader.loading = true;
+            self.reader.error = None;
             true
         } else {
             false
@@ -222,6 +232,7 @@ impl App {
             self.reader.page_urls.clear();
             self.reader.page_image = None;
             self.reader.loading = true;
+            self.reader.error = None;
             true
         } else {
             false
@@ -725,17 +736,27 @@ fn draw_reader(f: &mut Frame, app: &mut App) {
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Yellow));
         f.render_widget(loading, inner);
+    } else if let Some(ref error) = app.reader.error {
+        let error_text = Paragraph::new(error.as_str())
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Red));
+        f.render_widget(error_text, inner);
     } else if let Some(ref mut state) = app.reader.page_image {
         let image_widget = StatefulImage::new().resize(Resize::Fit(None));
         f.render_stateful_widget(image_widget, inner, state);
     } else {
-        let error = Paragraph::new("Failed to load page")
+        let error = Paragraph::new("No page to display")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Red));
+            .style(Style::default().fg(Color::DarkGray));
         f.render_widget(error, inner);
     }
 
-    draw_footer(f, root[2], "←/→: page | n: next ch | p: prev ch | Esc: back | q: quit");
+    let footer_hint = if app.reader.error.is_some() {
+        "←/→: page | n: next ch | p: prev ch | r: retry | Esc: back | q: quit"
+    } else {
+        "←/→: page | n: next ch | p: prev ch | Esc: back | q: quit"
+    };
+    draw_footer(f, root[2], footer_hint);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
