@@ -298,6 +298,16 @@ async fn run_app(
                     }
                     BackgroundTask::PagePreloaded { page_url } => {
                         preloading_pages.remove(&page_url);
+                        // Continue preloading from this page's position
+                        if let Some(idx) = app.reader.page_urls.iter().position(|u| u == &page_url) {
+                            preload_upcoming_pages(
+                                &app.reader.page_urls,
+                                idx,
+                                &mut preloading_pages,
+                                &task_tx,
+                                &cache,
+                            );
+                        }
                     }
                     BackgroundTask::SearchResults { results } => {
                         app.search_results = results;
