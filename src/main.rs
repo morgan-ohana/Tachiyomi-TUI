@@ -565,7 +565,7 @@ fn handle_detail_input(
             if let Some(selected) = app.chapter_list_state.selected() {
                 if let Some(chapter) = app.chapters.get(selected) {
                     if let Some(external_url) = &chapter.external_url {
-                        log::warn!("Chapter is external and cannot be read in-app: {}", external_url);
+                        log::debug!("Chapter is external and cannot be read in-app: {}", external_url);
                         webbrowser::open(external_url).ok();
                     } else {
                         let chapter_id = chapter.id.clone();
